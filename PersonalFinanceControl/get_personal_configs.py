@@ -18,7 +18,7 @@ def get_expense_plan() -> (
     expense_plan = get_secrets()["costs"]
 
     for variable_cost in expense_plan["variable"]:
-        variable_cost["already_payed"] = bool(variable_cost["already_payed"])
+        variable_cost["already_paid"] = bool(variable_cost["already_paid"])
 
     return expense_plan
 

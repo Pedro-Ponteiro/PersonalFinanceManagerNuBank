@@ -139,16 +139,16 @@ class CostsAnalyzer:
             fixed_cost_payments = open_bill_payments.loc[
                 open_bill_payments["title"] == fixed_cost["title"]
             ]
-            fixed_cost_amount_payed = fixed_cost_payments["amount"].sum() / 100
+            fixed_cost_amount_paid = fixed_cost_payments["amount"].sum() / 100
 
-            amount_pending = fixed_cost["amount"] - fixed_cost_amount_payed
+            amount_pending = fixed_cost["amount"] - fixed_cost_amount_paid
 
             cost_data = {
                 "type": "fixed",
                 "title": fixed_cost["title"],
-                "amount_payed": fixed_cost_amount_payed,
+                "amount_paid": fixed_cost_amount_paid,
                 "amount_pending": amount_pending,
-                "already_payed": amount_pending <= 0,
+                "already_paid": amount_pending <= 0,
                 "this_bill_payment": True,
                 "extra_payment": amount_pending < 0,
             }
@@ -163,7 +163,7 @@ class CostsAnalyzer:
     ) -> Dict[str, Any]:
         variable_costs_status = []
         for variable_cost in variable_costs_list:
-            if variable_cost["already_payed"] is True:
+            if variable_cost["already_paid"] is True:
                 amount_pending = 0
             else:
                 amount_pending = variable_cost["amount"]
@@ -175,8 +175,8 @@ class CostsAnalyzer:
             cost_data = {
                 "type": "variable",
                 "title": variable_cost["title"],
-                "amount_payed": variable_cost["amount"] - amount_pending,
-                "already_payed": variable_cost["already_payed"],
+                "amount_paid": variable_cost["amount"] - amount_pending,
+                "already_paid": variable_cost["already_paid"],
                 "amount_pending": amount_pending,
                 "this_bill_payment": due_this_bill,
                 "extra_payment": amount_pending < 0,
