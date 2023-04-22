@@ -12,15 +12,31 @@ from PersonalFinanceControl import LocalManagementConstants, get_personal_config
 
 # TODO: make this a singleton
 class NubankBill:
+    def __init__(self, use_cached: bool) -> None:
+        self.nu_client = get_personal_configs.get_nubank_client()
+
+        self.load_open_bill_details(use_cached)
+        self.load_credit_limit(use_cached)
+
     def load_open_bill_details(self, use_cached: bool):
         (
             self.open_bill_details,
             self.open_bill_close_date,
         ) = self._get_open_bill_details(use_cached)
+
         if not use_cached:
             self._cache_open_bill_details(self.open_bill_details)
 
         self.open_bill_payments = self._get_open_bill_payments(self.open_bill_details)
+
+    def load_credit_limit(self, use_cached: bool):
+        if not use_cached:
+            self.credit_limit = (
+                self.nu_client.get_credit_card_balance()["available"] / 100
+            )
+            self._cache_credit_limit(self.credit_limit)
+        else:
+            self.credit_limit = self._get_credit_limit_cached()
 
     def _get_open_bill_payments(self, open_bill_details):
         open_bill_payments = pd.DataFrame(open_bill_details["bill"]["line_items"])
@@ -43,8 +59,14 @@ class NubankBill:
 
         return open_bill_details, self._get_open_bill_close_date(open_bill_details)
 
+    def _get_credit_limit_cached(self):
+        with open(LocalManagementConstants.CACHE_CREDIT_FILEPATH, "rb") as f:
+            credit_limit: float = pickle.load(f)
+
+        return credit_limit
+
     def _get_open_bill_details_online(self):
-        nu = get_personal_configs.get_nubank_client()
+        nu = self.nu_client
         bills: List[Dict[str, Any]] = nu.get_bills()
         open_bill = self._get_open_bill(bills)
         open_bill_details = nu.get_bill_details(open_bill)
@@ -65,9 +87,21 @@ class NubankBill:
         with open(LocalManagementConstants.CACHE_BILL_FILEPATH, "wb") as f:
             pickle.dump(open_bill_details, f)
 
+    def _cache_credit_limit(self, credit_limit):
+        os.makedirs(LocalManagementConstants.CACHE_FOLDER, exist_ok=True)
+
+        with open(LocalManagementConstants.CACHE_CREDIT_FILEPATH, "wb") as f:
+            pickle.dump(credit_limit, f)
+
 
 # TODO: make this a singleton
 class CostsAnalyzer:
+    def __init__(self, nu_bill: NubankBill) -> None:
+        self.load_costs()
+        self.load_analyzed_costs(
+            nu_bill.open_bill_payments, nu_bill.open_bill_close_date
+        )
+
     def load_costs(self):
         self.personal_costs_plan = get_personal_configs.get_expense_plan()
         self.fixed_costs_plan = self.personal_costs_plan["fixed"]
@@ -186,22 +220,6 @@ class CostsAnalyzer:
         return pd.DataFrame(variable_costs_status)
 
 
-def setup_CostsAnalyzer(nu_bill: NubankBill):
-    cost_analyzer = CostsAnalyzer()
-    cost_analyzer.load_costs()
-    cost_analyzer.load_analyzed_costs(
-        nu_bill.open_bill_payments, nu_bill.open_bill_close_date
-    )
-    return cost_analyzer
-
-
-def setup_NubankBill(use_cached: bool):
-    nu_bill = NubankBill()
-    nu_bill.load_open_bill_details(use_cached)
-
-    return nu_bill
-
-
 @dataclass
 class RequestedData:
     other_payments_sum: float
@@ -210,11 +228,12 @@ class RequestedData:
     close_date: str
     variable_payments_pending: float
     fixed_cost_extra_payments: float
+    available_credit_limit: float
 
 
 def request_data(use_cached: bool) -> RequestedData:
-    nu_bill = setup_NubankBill(use_cached)
-    costs_analyzer = setup_CostsAnalyzer(nu_bill)
+    nu_bill = NubankBill(use_cached)
+    costs_analyzer = CostsAnalyzer(nu_bill)
     data = RequestedData(
         **{
             "other_payments_sum": costs_analyzer.other_payments_sum,
@@ -223,6 +242,7 @@ def request_data(use_cached: bool) -> RequestedData:
             "close_date": nu_bill.open_bill_close_date.strftime("%Y-%m-%d"),
             "variable_payments_pending": costs_analyzer.variable_payments_open_sum,
             "fixed_cost_extra_payments": costs_analyzer.extra_payments_sum,
+            "available_credit_limit": nu_bill.credit_limit,
         }
     )
 
